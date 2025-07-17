@@ -12,7 +12,8 @@ class Config:
 
         # update dir
         self.cur_dir = osp.dirname(os.path.abspath(__file__))
-        self.root_dir = osp.join(self.cur_dir, '..')
+        # Point to the main SMPLer-X directory instead of the RealisDance copy
+        self.root_dir = osp.join(self.cur_dir, '..', '..', '..', '..', 'SMPLer-X')
         self.data_dir = osp.join(self.root_dir, 'dataset')
         self.human_model_path = osp.join(self.root_dir, 'common', 'utils', 'human_model_files')
 
