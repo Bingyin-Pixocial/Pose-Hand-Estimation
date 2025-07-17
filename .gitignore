@@ -6,3 +6,5 @@ pretrained_models/
 *__pycache__
 *_bak*
 .idea
+prepare_pose/DWPose/ControlNet-v1-1-nightly/annotator/ckpts/dw-ll_ucoco_384.onnx
+prepare_pose/DWPose/ControlNet-v1-1-nightly/annotator/ckpts/yolox_l.onnx
