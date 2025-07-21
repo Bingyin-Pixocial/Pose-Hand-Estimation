@@ -53,7 +53,7 @@ def main():
     # load model
     from base import Demoer
     from utils.preprocessing import load_img, process_bbox, generate_patch_image
-    from utils.vis import save_obj,render_mesh_kugang
+    from utils.vis import save_obj,render_mesh_kugang, render_mesh
     from utils.human_models import smpl_x
     demoer = Demoer()
     demoer._make_model()
@@ -91,7 +91,10 @@ def main():
         mmdet_results = inference_detector(model, frame)
         mmdet_box = process_mmdet_results(mmdet_results, cat_id=0, multi_person=multi_person)
 
+        print(f"Frame {frame_idx}: Detected {len(mmdet_box[0])} persons")
+        
         if len(mmdet_box[0]) < 1:
+            print(f"Frame {frame_idx}: No persons detected, writing black frame")
             vis_img = np.zeros_like(vis_img)  # Create black image of the same size
             output_video.write(vis_img)
             continue
@@ -104,33 +107,71 @@ def main():
             num_bbox = len(mmdet_box)
 
         for bbox_id in range(num_bbox):
+            print(f"Frame {frame_idx}: Processing bbox {bbox_id + 1}/{num_bbox}")
             mmdet_box_xywh = np.zeros((4))
             mmdet_box_xywh[0] = mmdet_box[bbox_id][0]
             mmdet_box_xywh[1] = mmdet_box[bbox_id][1]
             mmdet_box_xywh[2] = abs(mmdet_box[bbox_id][2] - mmdet_box[bbox_id][0])
             mmdet_box_xywh[3] = abs(mmdet_box[bbox_id][3] - mmdet_box[bbox_id][1])
+            print(f"Frame {frame_idx}: Raw bbox xywh: {mmdet_box_xywh}")
 
             if mmdet_box_xywh[2] < args.bbox_thr or mmdet_box_xywh[3] < args.bbox_thr * 3:
+                print(f"Frame {frame_idx}: Bbox too small, skipping. Width: {mmdet_box_xywh[2]}, Height: {mmdet_box_xywh[3]}, Threshold: {args.bbox_thr}")
                 continue
 
             start_point = (int(mmdet_box[bbox_id][0]), int(mmdet_box[bbox_id][1]))
             end_point = (int(mmdet_box[bbox_id][2]), int(mmdet_box[bbox_id][3]))
 
             bbox = process_bbox(mmdet_box_xywh, original_img_width, original_img_height)
+            print(f"Frame {frame_idx}: Processed bbox: {bbox}")
+            
             img, img2bb_trans, bb2img_trans = generate_patch_image(original_img, bbox, 1.0, 0.0, False, cfg.input_img_shape)
+            print(f"Frame {frame_idx}: Generated patch image shape: {img.shape}")
+            
             img = transforms.ToTensor()(img.astype(np.float32)) / 255
             img = img.cuda()[None, :, :, :]
+            print(f"Frame {frame_idx}: Input tensor shape: {img.shape}")
+            
             inputs = {'img': img}
             targets = {}
             meta_info = {}
 
             with torch.no_grad():
                 out = demoer.model(inputs, targets, meta_info, 'test')
+            
+            # Debug: Check if model output contains the expected key
+            if 'smplx_mesh_cam' not in out:
+                print(f"Frame {frame_idx}: 'smplx_mesh_cam' not found in model output. Available keys: {list(out.keys())}")
+                continue
+                
             mesh = out['smplx_mesh_cam'].detach().cpu().numpy()[0]
+            
+            # Debug: Check mesh shape and content
+            print(f"Frame {frame_idx}: mesh shape: {mesh.shape}")
+            if mesh.shape[0] == 0:
+                print(f"Frame {frame_idx}: Empty mesh detected!")
+                continue
+            print(f"Frame {frame_idx}: mesh min/max values: {mesh.min():.3f}/{mesh.max():.3f}")
+            
+            # Debug: Check face data
+            print(f"Frame {frame_idx}: face shape: {smpl_x.face.shape}")
+            if smpl_x.face.shape[0] == 0:
+                print(f"Frame {frame_idx}: Empty face data detected!")
+                continue
 
             focal = [cfg.focal[0] / cfg.input_body_shape[1] * bbox[2], cfg.focal[1] / cfg.input_body_shape[0] * bbox[3]]
             princpt = [cfg.princpt[0] / cfg.input_body_shape[1] * bbox[2] + bbox[0], cfg.princpt[1] / cfg.input_body_shape[0] * bbox[3] + bbox[1]]
-            vis_img = render_mesh_kugang(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=args.show_verts)
+            
+            # Debug: Check camera parameters
+            print(f"Frame {frame_idx}: focal: {focal}, princpt: {princpt}")
+            
+            try:
+                vis_img = render_mesh_kugang(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=args.show_verts)
+                print(f"Frame {frame_idx}: render_mesh_kugang completed successfully")
+            except Exception as e:
+                print(f"Frame {frame_idx}: Error in render_mesh_kugang: {str(e)}")
+                # Continue with original image if rendering fails
+                continue
 
             if args.show_bbox:
                 vis_img = cv2.rectangle(vis_img, start_point, end_point, (255, 0, 0), 2)

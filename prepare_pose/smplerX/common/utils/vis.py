@@ -253,6 +253,11 @@ def render_mesh_kugang(img, mesh, face, cam_param, mesh_as_vertices=False):
         vertices_2d = perspective_projection(mesh, cam_param)
         img = vis_keypoints(img, vertices_2d, alpha=0.8, radius=2, color=(0, 0, 255))
     else:
+        # Check for nan values in mesh
+        if np.isnan(mesh).any():
+            print("Warning: NaN values detected in mesh, skipping rendering")
+            return img
+        
         # mesh
         mesh = trimesh.Trimesh(mesh, face)
         rot = trimesh.transformations.rotation_matrix(
